@@ -1,0 +1,83 @@
+#include "cache.h"
+#include <stdio.h>
+
+/*******定义常量*********/
+const int GHB_SIZE = 256;
+const int IT_SIZE = 256;
+const int look_head = 1;
+const int d = 20;
+
+struct GHB_entry
+{
+    uint64_t cache_line_addr;    
+    unsigned int prev_ptr = 256;    
+} ;
+
+struct IT_entry
+{
+    unsigned int GHB_ENTRY_ptr = 256;
+};
+
+struct GHB_entry GHB[GHB_SIZE];
+struct IT_entry IT[IT_SIZE];
+unsigned int k = 0;
+
+void CACHE::l2c_prefetcher_initialize()
+{
+    cout << "CPU " << cpu << " L2C GHB Stride prefetcher" << endl;
+}
+
+
+
+uint32_t CACHE::l2c_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint32_t metadata_in)
+{
+    
+    if (IT[ip % IT_SIZE].GHB_ENTRY_ptr != 256)
+    {
+        GHB[k].prev_ptr = IT[ip % IT_SIZE].GHB_ENTRY_ptr;
+    }
+    else
+    {
+        GHB[k].prev_ptr = 256;
+        
+    }
+    uint64_t cache_line_addr = addr >> LOG2_BLOCK_SIZE;
+    GHB[k].cache_line_addr = cache_line_addr;
+
+    IT[ip % IT_SIZE].GHB_ENTRY_ptr = k;
+    unsigned int block1=k;
+    unsigned int block2=GHB[block1].prev_ptr;
+    unsigned int block3=0;
+    bool triple_miss=false;
+    if(block2 != 256){
+        block3=GHB[block2].prev_ptr;
+        if(block3 != 256){
+            triple_miss=true;
+        }
+    }
+    if(triple_miss){
+        uint64_t stride1 = GHB[block1].cache_line_addr - GHB[block2].cache_line_addr;
+        uint64_t stride2 = GHB[block2].cache_line_addr - GHB[block3].cache_line_addr;
+        if(stride1==stride2){
+            for (int i = look_head; i <= look_head + d; i++)
+                {
+                    uint64_t pf_addr = (cache_line_addr + i * stride1) << LOG2_BLOCK_SIZE;
+                    prefetch_line(ip, addr, pf_addr, FILL_L2, 0);
+                }
+        }
+    }
+    k++;
+    k %= 256;
+
+    return metadata_in;
+}
+
+uint32_t CACHE::l2c_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint32_t metadata_in)
+{
+    return metadata_in;
+}
+
+void CACHE::l2c_prefetcher_final_stats()
+{
+   cout << "CPU " << cpu << " L2C GHB Stride prefetcher final stats" << endl;
+}
